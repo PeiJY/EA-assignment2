@@ -9,15 +9,18 @@ from cec2013.cec2013 import *
 import numpy as np
 import random
 
-POPU_SIZE = 300
-KIDS_NUM = 300
+POPU_SIZE = 100
+KIDS_NUM = 100
 RUN_REPEAT = 50
-MUTATE_RATE = 0.3
-TARGET_FUNC = 1
-MAX_EVALUATE_COUNT = 50000
+MUTATE_RATE = 0.6
+TARGET_FUNC = 6
+MAX_EVALUATE_COUNT = 20000
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
-TOURNAMENT_RATE = 0.3
+TOURNAMENT_RATE = 0.4
+SHARING_RADIUS = 6
+SHARING_SIGMA = 0.5
+SHARING_BETA = 2
 
 EVALUATE_COUNT = 0
 DIM = 0
@@ -25,161 +28,295 @@ ub = 0
 lb = 0
 
 def init(ub,lb):
-	population = np.zeros((POPU_SIZE,DIM))
-	for i in range(POPU_SIZE):
-		population[i] = lb + (ub - lb) * np.random.rand(1, DIM)
-	return population
+    population = np.zeros((POPU_SIZE,DIM))
+    print(POPU_SIZE,DIM)
+    for i in range(POPU_SIZE):
+        population[i] = lb + (ub - lb) * np.random.rand(1, DIM)
+        print(population[i])
+    return population
 
 def crossover(A,B):
-	kid = np.zeros(DIM)
-	for i in range(DIM):
-		kid[i] = CROSSOVER_ALPHA * A[i] + (1-CROSSOVER_ALPHA) * B[i]
-	return kid
+    kid = np.zeros(DIM)
+    for i in range(DIM):
+        kid[i] = CROSSOVER_ALPHA * A[i] + (1-CROSSOVER_ALPHA) * B[i]
+    return kid
 
 def mutate(kid):
-	pob = random.random()
-	if pob > MUTATE_RATE:
-		return kid
-	for i in range(DIM):
-		kid[i] += np.random.standard_cauchy(1) * MUTATE_GAMMA
-	return kid
+    pob = random.random()
+    if pob > MUTATE_RATE:
+        return kid
+    for i in range(DIM):
+        kid[i] += np.random.standard_cauchy(1) * MUTATE_GAMMA
+    return kid
 
-def select(population,fitness):
-	total_popu_size = population.shape[0]
-	modified_fitness = fitness_share(population,fitness)
-	win_table = np.zeros(total_popu_size)
-	print("total_popu_size: ",total_popu_size)
-	for i in range(total_popu_size):
-		for j in range(0,int(total_popu_size * TOURNAMENT_RATE)):
-			another = random.randint(0,total_popu_size-1)
-			if( modified_fitness[i] > modified_fitness[another]):
-				win_table[i] += 1
-	order = np.argsort(win_table)
-	sorted_popu = population[-order]
-	sorted_fitness = fitness[-order]
-	return sorted_popu[0:POPU_SIZE,:],sorted_fitness[0:POPU_SIZE]
+def select_crodwing(parents,parents_fitness,kids,kids_fitness,keep_rate):
+
+    pass
+
+
+def select_fitness_sharing(parents,parents_fitness,kids,kids_fitness):
+    keep_rate = 0.1
+    edge = int(keep_rate*POPU_SIZE)
+    buffer_popu = parents[0:edge,:]
+    buffer_fitness = parents_fitness[0:edge]
+    population = np.r_[parents[edge+1:,:], kids]
+    fitness = np.r_[parents_fitness[edge+1:], kids_fitness]
+    total_popu_size = population.shape[0]
+    modified_fitness = fitness_share(population,fitness)
+    win_table = np.zeros(total_popu_size)
+    for i in range(total_popu_size):
+        for j in range(0,int(total_popu_size * TOURNAMENT_RATE)):
+            another = random.randint(0,total_popu_size-1)
+            if( modified_fitness[i] > modified_fitness[another]):
+                win_table[i] += 1
+    order = np.argsort(win_table)
+    sorted_popu = population[-order]
+    sorted_fitness = fitness[-order]
+    sorted_popu =sorted_popu[0:POPU_SIZE,:]
+    sorted_fitness = sorted_fitness[0:POPU_SIZE]
+
+    sorted_popu = np.r_[buffer_popu,sorted_popu]
+    sorted_fitness = np.r_[buffer_fitness, sorted_fitness]
+
+    order = np.argsort(sorted_fitness)
+    print("order: ",order)
+    sorted_popu = sorted_popu[-order]
+    sorted_fitness = sorted_fitness[-order]
+    return sorted_popu,sorted_fitness
 
 def generate(population):
-	kids = np.zeros((KIDS_NUM,DIM))
-	kids_count = 0
-	while kids_count < KIDS_NUM:
-		kid = crossover(population[random.randint(0,population.shape[0]-1)],population[random.randint(0,population.shape[0]-1)])
-		kid = mutate(kid)
-		if is_invalid(kid):
-			continue
-		## check if kid is exist in kids
-		a = (kids == kid)
-		duplicate = False
-		for c in a:
-			if c.all():
-				duplicate = True
-				break
-		if not duplicate:
-			kids[kids_count] = kid
-			kids_count += 1
+    kids = np.zeros((KIDS_NUM,DIM))
+    kids_count = 0
+    while kids_count < KIDS_NUM:
+        kid = crossover(population[random.randint(0,population.shape[0]-1)],population[random.randint(0,population.shape[0]-1)])
+        kid = mutate(kid)
+        if is_invalid(kid):
+            continue
+        ## check if kid is exist in kids
+        a = (kids == kid)
+        duplicate = False
+        for c in a:
+            if c.all():
+                duplicate = True
+                break
+        if not duplicate:
+            kids[kids_count] = kid
+            kids_count += 1
 
-	return kids
+    return kids
 
 
 def is_invalid(indiv):
-	invalid = False
-	for j in range(DIM):
-		if indiv[j]>ub[j] or indiv[j]<lb[j]:
-			invalid = True
-			print("invalid solution")
-			break
-	return invalid
+    invalid = False
+    for j in range(DIM):
+        if indiv[j]>ub[j] or indiv[j]<lb[j]:
+            invalid = True
+            break
+    return invalid
 
 def fitness_share(population,fitness):
-	return fitness
+
+    new_fitness = np.zeros(fitness.shape)
+    for i in range(population.shape[0]):
+        sh = 0
+        for j in range(population.shape[0]):
+            if i != j:
+                dis = distance(population[i],population[j])
+                if dis < SHARING_RADIUS:
+                    sh += 1 - math.pow((dis/SHARING_RADIUS),SHARING_SIGMA)
+        if sh == 0:
+            sh = 0.0001
+        new_fitness[i] = math.pow(fitness[i],SHARING_BETA) / sh
+        print("----point: ",population[i])
+        print("before sharing: ",fitness[i])
+        print("sh: ",sh)
+    return new_fitness
+
+def distance(indiv1, indiv2):
+    sum = 0
+    for i in range(DIM):
+        sum += math.pow(indiv1[i] - indiv2[i],2)
+    return math.pow(sum,0.5)
+
 
 def evaluate(f,x):
-	global EVALUATE_COUNT
-	size = x.shape[0]
-	fitness = np.zeros(size)
-	for i in range(size):
-		fitness[i] = f.evaluate(x[i])
-		EVALUATE_COUNT += 1
-	return fitness
+    global EVALUATE_COUNT
+    size = x.shape[0]
+    fitness = np.zeros(size)
+    for i in range(size):
+        print(x[i])
+        fitness[i] = f.evaluate(x[i])
+        EVALUATE_COUNT += 1
+    return fitness
 
 def main():
-	print (70*"=")
-	# Demonstration of all functions
-	for i in range(1,21):
-		# Create function
-		f = CEC2013(i)
+    print (70*"=")
+    # Demonstration of all functions
+    for i in range(1,21):
+        # Create function
+        f = CEC2013(i)
 
-		# Create position vectors
-		x = np.ones( f.get_dimension() )
+        # Create position vectors
+        x = np.ones( f.get_dimension() )
 
-		# Evaluate :-)
-		value = f.evaluate(x)
-		print ("f", i, "(", x, ") = ", f.evaluate(x))
+        # Evaluate :-)
+        value = f.evaluate(x)
+        print ("f", i, "(", x, ") = ", f.evaluate(x))
 
-	print (70*"=")
-	# Demonstration of using how_many_goptima function
-	for i in range(1,21):
-		# Create function
-		f = CEC2013(i)
-		dim = f.get_dimension()
+    print (70*"=")
+    # Demonstration of using how_many_goptima function
+    for i in range(1,21):
+        # Create function
+        f = CEC2013(i)
+        dim = f.get_dimension()
 
-		# Create population of position vectors
-		pop_size = 10
-		X = np.zeros( (pop_size, dim) )
-		ub =np.zeros( dim )
-		lb =np.zeros( dim )
-		# Get lower, upper bounds
-		for k in range(dim):
-			ub[k] = f.get_ubound(k)
-			lb[k] = f.get_lbound(k)
+        # Create population of position vectors
+        pop_size = 10
+        X = np.zeros( (pop_size, dim) )
+        ub =np.zeros( dim )
+        lb =np.zeros( dim )
+        # Get lower, upper bounds
+        for k in range(dim):
+            ub[k] = f.get_ubound(k)
+            lb[k] = f.get_lbound(k)
+        ub = [15]
+        lb = [10]
+        # Create population within bounds
+        fitness = np.zeros( pop_size )
+        for j in range(pop_size):
+            X[j] = lb + (ub - lb) * np.random.rand( 1 , dim )
+            fitness[j] = f.evaluate(X[j])
 
-		# Create population within bounds
-		fitness = np.zeros( pop_size )
-		for j in range(pop_size):
-			X[j] = lb + (ub - lb) * np.random.rand( 1 , dim )
-			fitness[j] = f.evaluate(X[j])
+        # Calculate how many global optima are in the population
+        accuracy = 0.001
+        count, seeds = how_many_goptima(X, f, accuracy)
+        print ("In the current population there exist", count, "global optimizers.")
+        print ("Global optimizers:", seeds)
 
-		# Calculate how many global optima are in the population
-		accuracy = 0.001
-		count, seeds = how_many_goptima(X, f, accuracy)
-		print ("In the current population there exist", count, "global optimizers.")
-		print ("Global optimizers:", seeds)
+    print (70*"=")
 
-	print (70*"=")
+def EA_fitness_sharing():
+    global DIM
+    global ub
+    global lb
+    global EVALUATE_COUNT
+    ## intialization
+    file = open("log.txt","w")
+    f = CEC2013(TARGET_FUNC)
+    DIM = f.get_dimension()
+    ub = np.zeros(DIM)
+    lb = np.zeros(DIM)
+    # Get lower, upper bounds
+    for k in range(DIM):
+        ub[k] = f.get_ubound(k)
+        lb[k] = f.get_lbound(k)
+
+    population = init(ub,lb)
+    fitness = evaluate(f,population)
+    print("init population: ",population)
+    print("init fitness: ", fitness)
+    print(30*"*", ", init over")
+    ## iteration
+    while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
+        print("evaluate count: ",EVALUATE_COUNT)
+        kids = generate(population)
+        print("kids : ", kids)
+        kids_fitness = evaluate(f, kids)
+        print("kids_fitness : ", kids_fitness)
+
+        population,fitness = select_fitness_sharing(population,fitness,kids,kids_fitness)
+        print(np.mean(fitness))
+        accuracy = 0.1
+        for i in range(population.shape[0]):
+            file.write(str(population[i][0]) + " " + str(fitness[i])+ " " + str(EVALUATE_COUNT) + '\n')
+        count, seeds = how_many_goptima(population, f, accuracy)
+        print("In the current population there exist", count, "global optimizers.")
+        print("Global optimizers:", seeds)
+        print(70*"=")
+    file.close()
+    accuracy = 1
+    count, seeds = how_many_goptima(population, f, accuracy)
+    print("In the current population there exist", count, "global optimizers.")
+    print("Global optimizers:", seeds)
+
+def generate_crowding(f,population,fitness):
+    kids_count = 0
+    global EVALUATE_COUNT
+    while kids_count < POPU_SIZE:
+        indexA = random.randint(0,population.shape[0]-1)
+        indexB = random.randint(0,population.shape[0]-1)
+        parentA = population[indexA]
+        parentB = population[indexB]
+        kidA= crossover(parentA,parentB)
+        kidB = crossover(parentB,parentA)
+        kidA = mutate(kidA)
+        kidB = mutate(kidB)
+        if  is_invalid(kidA) or is_invalid(kidB):
+            continue
+        ## check if kid is exist in kids
+        kidA_fitness = f.evaluate(kidA)
+        kidB_fitness = f.evaluate(kidB)
+        EVALUATE_COUNT += 2
+        if((distance(parentA,kidA)+distance(parentB,kidB)) > (distance(parentA,kidB)+distance(parentB,kidA))):
+            if(kidA_fitness > fitness[indexA]):
+                population[indexA] = kidA
+                fitness[indexA] = kidA_fitness
+                kids_count += 1
+            if (kidB_fitness > fitness[indexB]):
+                population[indexB] = kidB
+                fitness[indexB] = kidB_fitness
+                kids_count += 1
+        else:
+            if (kidA_fitness > fitness[indexB]):
+                population[indexB] = kidA
+                fitness[indexB] = kidA_fitness
+                kids_count += 1
+            if (kidB_fitness > fitness[indexA]):
+                population[indexA] = kidB
+                fitness[indexA] = kidB_fitness
+                kids_count += 1
+    return population,fitness
 
 
+def EA_crowding():
+    global DIM
+    global ub
+    global lb
+    global EVALUATE_COUNT
+    ## intialization
+    file = open("log.txt","w")
+    f = CEC2013(TARGET_FUNC)
+    DIM = f.get_dimension()
+    ub = np.zeros(DIM)
+    lb = np.zeros(DIM)
+    # Get lower, upper bounds
+    for k in range(DIM):
+        ub[k] = f.get_ubound(k)
+        lb[k] = f.get_lbound(k)
+    population = init(ub,lb)
+    print(population)
+    fitness = evaluate(f,population)
+    print(30*"*", ", init over")
+    ## iteration
+    while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
+        print("evaluate count: ",EVALUATE_COUNT)
+        population,fitness = generate_crowding(f,population,fitness)
+        print(np.mean(fitness))
+        accuracy = 0.1
+        for i in range(population.shape[0]):
+            file.write(str(population[i][0]) + " " + str(fitness[i])+ " " + str(EVALUATE_COUNT) + '\n')
+        count, seeds = how_many_goptima(population, f, accuracy)
+        print("In the current population there exist", count, "global optimizers.")
+        print("Global optimizers:", seeds)
+        print(70*"=")
+    file.close()
+    accuracys = [1,0.1,0.01,0.001]
+    count, seeds = how_many_goptima(population, f, accuracy)
+    for accuracy in accuracys:
+        print("accurcy = ", accuracy)
+        print("In the current population there exist", count, "global optimizers.")
+        print("Global optimizers:", seeds)
 
 if __name__ == "__main__":
-	## intialization
-	f = CEC2013(TARGET_FUNC)
-	DIM = f.get_dimension()
-	ub = np.zeros(DIM)
-	lb = np.zeros(DIM)
-	# Get lower, upper bounds
-	for k in range(DIM):
-		ub[k] = f.get_ubound(k)
-		lb[k] = f.get_lbound(k)
-
-	population = init(ub,lb)
-	fitness = evaluate(f,population)
-	print(30*"*", ", init over")
-	## iteration
-	while(EVALUATE_COUNT <= MAX_EVALUATE_COUNT):
-		print("evaluate count: ",EVALUATE_COUNT)
-		kids = generate(population)
-
-		kids_fitness = evaluate(f, kids)
-		total_popu = np.r_[population,kids]
-		total_fitness = np.r_[fitness,kids_fitness]
-		population,fitness = select(total_popu,total_fitness)
-		print(fitness)
-		accuracy = 0.001
-		count, seeds = how_many_goptima(population, f, accuracy)
-		print("In the current population there exist", count, "global optimizers.")
-		print("Global optimizers:", seeds)
-		print(70*"=")
-	accuracy = 0.001
-	count, seeds = how_many_goptima(population, f, accuracy)
-	print("In the current population there exist", count, "global optimizers.")
-	print("Global optimizers:", seeds)
+    EA_crowding()
 
