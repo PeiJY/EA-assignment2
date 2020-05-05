@@ -1,0 +1,9 @@
+260行，防kid和population重复的代码，极大降低速度，而结果没有明显提高，还有点降低
+
+生成下一代之前的population local search 似乎有一点点提高结果
+
+生成后的indiv local search 大大降低结果
+
+TODO：
+尝试改进indiv local search
+使用显式精英策略
