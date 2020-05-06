@@ -4,18 +4,24 @@ from cec2013.cec2013 import *
 import numpy as np
 import random
 
+# tech: window Speciation, crowding, local search
+
+
+###
+# thought window Speciation : 0.001 acc on funiton 6, nopt =
+###
+
 POPU_SIZE = 500
 KIDS_NUM = 500
 RUN_REPEAT = 1
 MUTATE_RATE = 0.6
-TARGET_FUNC = 12
+TARGET_FUNC = 6
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
 TOURNAMENT_RATE = 0.4
-
 SHARING_SIGMA = 0.5
 SHARING_BETA = 2
-LOCAL_SEARCH_LENGTH_RATE = 0.05
+LOCAL_SEARCH_LENGTH_RATE = 0.5
 
 RADIUS = 0
 MAX_EVALUATE_COUNT = 0
@@ -29,9 +35,10 @@ OPT_LIST = []
 OPT_FE_LIST = []
 START_TIME = 0
 
+# 每个维度，正负2侧生成
 def local_search1(indiv,fitness):
     global EVALUATE_COUNT,local_search_improve_count
-    step_size = LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 3))
+    step_size =  RADIUS * LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 3))
     best_indiv = indiv
     best_fitness = fitness
     for j in range(indiv.shape[0]):
@@ -43,6 +50,32 @@ def local_search1(indiv,fitness):
             if new_fitness > best_fitness:
                 best_indiv = new_indiv
                 best_fitness = new_fitness
+                new_indiv = indiv
+        new_indiv[j] -= step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            EVALUATE_COUNT += 1
+            new_fitness = f.evaluate(new_indiv)
+            if new_fitness > best_fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+    return best_indiv,best_fitness
+
+# 一侧有提升则不再生成
+def local_search2(indiv,fitness):
+    global EVALUATE_COUNT,local_search_improve_count
+    step_size =  RADIUS * LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 2))
+    best_indiv = indiv
+    best_fitness = fitness
+    for j in range(indiv.shape[0]):
+        new_indiv = indiv
+        new_indiv[j] += step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            new_fitness = f.evaluate(new_indiv)
+            EVALUATE_COUNT += 1
+            if new_fitness > fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+                break
         new_indiv = indiv
         new_indiv[j] -= step_size * (ub[j] - lb[j])
         if not is_invalid(new_indiv):
@@ -51,13 +84,12 @@ def local_search1(indiv,fitness):
             if new_fitness > best_fitness:
                 best_indiv = new_indiv
                 best_fitness = new_fitness
-    if best_fitness > fitness:
-        local_search_improve_count += 1
+                break
     return best_indiv,best_fitness
 
 def local_search(population,fitness):
     global EVALUATE_COUNT,local_search_improve_count
-    step_size = LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT/MAX_EVALUATE_COUNT * 3))
+    step_size = RADIUS *  LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT/MAX_EVALUATE_COUNT * 3))
     for i in range(population.shape[0]):
         indiv = population[i]
         indiv_fitness = fitness[i]
@@ -245,69 +277,6 @@ def EA_fitness_sharing():
     print("In the current population there exist", count, "global optimizers.")
     print("Global optimizers:", seeds)
 
-def generate_crowding(file ,f,population,fitness):
-    global EVALUATE_COUNT
-    # no local search : 10 11 13
-    # has local search : 11 13 11
-    # population,fitness = local_search(population,fitness)
-    while EVALUATE_COUNT < MAX_EVALUATE_COUNT:
-        while True:
-            indexA = random.randint(0,population.shape[0]-1)
-            indexB = random.randint(0,population.shape[0]-1)
-            parentA = population[indexA]
-            parentB = population[indexB]
-            kidA= crossover(parentA,parentB)
-            kidB = crossover(parentB,parentA)
-            kidA = mutate(kidA)
-            kidB = mutate(kidB)
-            if (not is_invalid(kidA)) and (not is_invalid(kidB)) and (not exist(kidA,population)) and (not exist(kidB,population)) :
-                break
-
-        if  is_invalid(kidA) or is_invalid(kidB):
-            continue
-        ## check if kid is exist in kids
-        kidA_fitness = f.evaluate(kidA)
-        kidB_fitness = f.evaluate(kidB)
-        EVALUATE_COUNT += 2
-
-        #without duplicate check 7 5 7
-        # with dup check 8 6 8
-
-       # kidA,kidA_fitness = local_search1(kidA,kidA_fitness)
-       # kidB, kidB_fitness = local_search1(kidB, kidB_fitness)
-        if((distance(parentA,kidA)+distance(parentB,kidB)) > (distance(parentA,kidB)+distance(parentB,kidA))):
-            if(kidA_fitness > fitness[indexA]):
-                population[indexA] = kidA
-                fitness[indexA] = kidA_fitness
-                for i in kidA:
-                    file.write(str(i) + " ")
-                file.write(str(kidA_fitness) + " ")
-                file.write( str(EVALUATE_COUNT) + '\n')
-            if (kidB_fitness > fitness[indexB]):
-                population[indexB] = kidB
-                fitness[indexB] = kidB_fitness
-                for i in kidA:
-                    file.write(str(i) + " ")
-                file.write(str(kidA_fitness) + " ")
-                file.write( str(EVALUATE_COUNT) + '\n')
-        else:
-            if (kidA_fitness > fitness[indexB]):
-                population[indexB] = kidA
-                fitness[indexB] = kidA_fitness
-                for i in kidA:
-                    file.write(str(i) + " ")
-                file.write(str(kidA_fitness) + " ")
-                file.write( str(EVALUATE_COUNT) + '\n')
-            if (kidB_fitness > fitness[indexA]):
-                population[indexA] = kidB
-                fitness[indexA] = kidB_fitness
-                for i in kidA:
-                    file.write(str(i) + " ")
-                file.write(str(kidA_fitness) + " ")
-                file.write( str(EVALUATE_COUNT) + '\n')
-
-
-    return population,fitness
 
 def EA_crowding():
     global DIM
@@ -317,6 +286,7 @@ def EA_crowding():
     global f
     global RADIUS
     ## intialization
+
     f = CEC2013(TARGET_FUNC)
     DIM = f.get_dimension()
     MAX_EVALUATE_COUNT = f.get_maxfes()
@@ -329,10 +299,14 @@ def EA_crowding():
         lb[k] = f.get_lbound(k)
     for RUN_COUNT in range(1, RUN_REPEAT + 1):
         EVALUATE_COUNT = 0
-        output_filename = "problem%03drun%03d.dat" % (TARGET_FUNC, RUN_COUNT)
-        file = open(output_filename, "w")  ##problem001run001.dat
+        log_filename = "log.txt"
+        log_file = open(log_filename, "w")
+
         population = init(ub,lb)
         fitness = evaluate(f,population)
+        fes_list = np.array([EVALUATE_COUNT for i in range(POPU_SIZE)])
+        init_time = time.time()-START_TIME
+        time_list = np.array([init_time for i in range(POPU_SIZE)])
         ## iteration
         while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
             if EVALUATE_COUNT%5000 == 0:
@@ -351,6 +325,8 @@ def EA_crowding():
                 indexB = random.randint(0, population.shape[0] - 1)
                 parentA = population[indexA]
                 parentB = population[indexB]
+                if distance(parentA,parentB) > RADIUS: # Speciation , to avoid the population get closer and closer to center of solution space
+                    continue
                 kidA = crossover(parentA, parentB)
                 kidB = crossover(parentB, parentA)
                 kidA = mutate(kidA)
@@ -363,8 +339,8 @@ def EA_crowding():
             kidA_fitness = f.evaluate(kidA)
             kidB_fitness = f.evaluate(kidB)
             EVALUATE_COUNT += 2
-            # kidA,kidA_fitness = local_search1(kidA,kidA_fitness)
-            # kidB, kidB_fitness = local_search1(kidB, kidB_fitness)
+            #kidA, kidA_fitness = local_search2(kidA,kidA_fitness)
+            #kidB, kidB_fitness = local_search2(kidB, kidB_fitness)
 
             # compare for replacement
             if ((distance(parentA, kidA) + distance(parentB, kidB)) > (
@@ -372,35 +348,57 @@ def EA_crowding():
                 if (kidA_fitness > fitness[indexA]):
                     population[indexA] = kidA
                     fitness[indexA] = kidA_fitness
+                    fes_list[indexA] = EVALUATE_COUNT
+                    time_list[indexA] = time.time() - START_TIME
+                    log_file.write(str(kidA_fitness) + " ")
+                    log_file.write(str(EVALUATE_COUNT) + '\n')
                     for i in kidA:
-                        file.write(str(i) + " ")
-                    file.write(str(kidA_fitness) + " ")
-                    file.write(str(EVALUATE_COUNT) + '\n')
+                        log_file.write(str(i) + " ")
+
                 if (kidB_fitness > fitness[indexB]):
                     population[indexB] = kidB
                     fitness[indexB] = kidB_fitness
+                    fes_list[indexB] = EVALUATE_COUNT
+                    time_list[indexB] = time.time() - START_TIME
+                    log_file.write(str(kidA_fitness) + " ")
+                    log_file.write(str(EVALUATE_COUNT) + '\n')
                     for i in kidA:
-                        file.write(str(i) + " ")
-                    file.write(str(kidA_fitness) + " ")
-                    file.write(str(EVALUATE_COUNT) + '\n')
+                        log_file.write(str(i) + " ")
+
             else:
                 if (kidA_fitness > fitness[indexB]):
                     population[indexB] = kidA
                     fitness[indexB] = kidA_fitness
+                    fes_list[indexB] = EVALUATE_COUNT
+                    time_list[indexB] = time.time() - START_TIME
+                    log_file.write(str(kidA_fitness) + " ")
+                    log_file.write(str(EVALUATE_COUNT) + '\n')
                     for i in kidA:
-                        file.write(str(i) + " ")
-                    file.write(str(kidA_fitness) + " ")
-                    file.write(str(EVALUATE_COUNT) + '\n')
+                        log_file.write(str(i) + " ")
+
                 if (kidB_fitness > fitness[indexA]):
                     population[indexA] = kidB
                     fitness[indexA] = kidB_fitness
+                    fes_list[indexA] = EVALUATE_COUNT
+                    time_list[indexA] = time.time() - START_TIME
+                    log_file.write(str(kidA_fitness) + " ")
+                    log_file.write(str(EVALUATE_COUNT) + '\n')
                     for i in kidA:
-                        file.write(str(i) + " ")
-                    file.write(str(kidA_fitness) + " ")
-                    file.write(str(EVALUATE_COUNT) + '\n')
+                        log_file.write(str(i) + " ")
 
 
-        file.close()
+        log_file.close()
+        output_filename = "problem%03drun%03d.dat" % (TARGET_FUNC, RUN_COUNT)
+        output_file = open(output_filename, "w")  ##problem001run001.dat
+        for i in range(POPU_SIZE):
+            for j in range(DIM):
+                output_file.write(str(population[i][j]) + " ")
+            output_file.write("= ")
+            output_file.write(str(fitness[i]))
+            output_file.write(" @ ")
+            output_file.write(str(fes_list[i]) + " " + str(time_list[i]) + " " + "1" + '\n')
+        output_file.close()
+
         accuracys = [1,0.1,0.01,0.001]
         count, seeds = how_many_goptima(population, f, accuracy)
         for accuracy in accuracys:
@@ -408,7 +406,10 @@ def EA_crowding():
             print("In the current population there exist", count, "global optimizers.")
             print("Global optimizers:", seeds)
 
-def find_current_opts(population,fitness):
+
+# not used
+def find_opts(population,fitness):
+    global OPTS,OPTS_FITNESS,OPTS_FES,OPTS_TIME
     opts = []
     opts_fitness = []
     opts_fes = []
@@ -416,27 +417,44 @@ def find_current_opts(population,fitness):
     accept_range = 0.9
     population = sort(population,fitness)
     fitness = sort(fitness,fitness)
-    best_fitness = fitness[0]
+    if OPTS_FITNESS.size > 0:
+        best_fitness = OPTS_FITNESS[0]
+    else:
+        best_fitness = 0
 
-    while opts_fitness[-1] > (opts_fitness[0] * accept_range):
+    # find the optimal indiv in current generation
+    while opts_fitness[-1] > (best_fitness * accept_range):
         optimal_indiv = population[0]
         optimal_fit = fitness[0]
+        if optimal_fit > best_fitness:
+            best_fitness = optimal_fit
         opts.append(optimal_indiv)
         opts_fitness.append(optimal_fit)
         opts_fes.append(EVALUATE_COUNT)
         opts_time.append(time.time()-START_TIME)
+        # delete all near indiv of optimal indiv
         for i in range(population.shape[0]):
             if distance(population[i],optimal_indiv) <= RADIUS:
                 np.delete(population,i,axis=0)
                 np.delete(fitness,i,axis=0)
                 i -= 1
 
+    sorted = sort(np.array([np.r_[OPTS_TIME, opts_time],np.r_[OPTS_FES ,opts_fes],np.r_[ OPTS_FITNESS,opts_fitness],np.r_[ OPTS,opts]]),np.r_[ OPTS_FITNESS,opts_fitness])
 
+    opts_fitness = sorted[:, 2]
+    ckpt = 0
+    for i in range(opts_fitness):
+        if opts_fitness[i] < best_fitness * accept_range:
+            ckpt = i
+            break
 
+    OPTS_TIME = sorted[:ckpt,0]
+    OPTS_FES = sorted[:ckpt,1]
+    OPTS_FITNESS = sorted[:ckpt,2]
+    OPTS = sorted[:ckpt, 3:]
 
 
 if __name__ == "__main__":
     START_TIME = time.time()
     EA_crowding()
-    print(local_search_improve_count)
 
