@@ -1,22 +1,23 @@
+import time
 
 from cec2013.cec2013 import *
 import numpy as np
 import random
 
-POPU_SIZE = 1000
-KIDS_NUM = 1000
-RUN_REPEAT = 50
+POPU_SIZE = 500
+KIDS_NUM = 500
+RUN_REPEAT = 1
 MUTATE_RATE = 0.6
-TARGET_FUNC = 6
+TARGET_FUNC = 12
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
 TOURNAMENT_RATE = 0.4
-SHARING_RADIUS = 6
+
 SHARING_SIGMA = 0.5
 SHARING_BETA = 2
 LOCAL_SEARCH_LENGTH_RATE = 0.05
 
-
+RADIUS = 0
 MAX_EVALUATE_COUNT = 0
 EVALUATE_COUNT = 0
 DIM = 0
@@ -26,6 +27,7 @@ f = None
 local_search_improve_count = 0
 OPT_LIST = []
 OPT_FE_LIST = []
+START_TIME = 0
 
 def local_search1(indiv,fitness):
     global EVALUATE_COUNT,local_search_improve_count
@@ -107,6 +109,10 @@ def mutate(kid):
         kid[i] += np.random.standard_cauchy(1) * MUTATE_GAMMA
     return kid
 
+def sort(targets,marks): # sort targets based on marks
+    order = np.argsort(marks)
+    return targets[-order]
+
 def select_fitness_sharing(parents,parents_fitness,kids,kids_fitness):
     keep_rate = 0.1
     edge = int(keep_rate*POPU_SIZE)
@@ -175,8 +181,8 @@ def fitness_share(population,fitness):
         for j in range(population.shape[0]):
             if i != j:
                 dis = distance(population[i],population[j])
-                if dis < SHARING_RADIUS:
-                    sh += 1 - math.pow((dis/SHARING_RADIUS),SHARING_SIGMA)
+                if dis < RADIUS:
+                    sh += 1 - math.pow((dis / RADIUS), SHARING_SIGMA)
         if sh == 0:
             sh = 0.0001
         new_fitness[i] = math.pow(fitness[i],SHARING_BETA) / sh
@@ -202,7 +208,7 @@ def EA_fitness_sharing():
     global ub
     global lb
     global EVALUATE_COUNT,MAX_EVALUATE_COUNT
-    global SHARING_RADIUS
+    global RADIUS
 
     ## intialization
     file = open("log.txt","w")
@@ -214,7 +220,7 @@ def EA_fitness_sharing():
     for k in range(DIM):
         ub[k] = f.get_ubound(k)
         lb[k] = f.get_lbound(k)
-    SHARING_RADIUS = f.get_rho()
+    RADIUS = f.get_rho()
     MAX_EVALUATE_COUNT = f.get_maxfes()
     population = init(ub,lb)
     fitness = evaluate(f,population)
@@ -309,10 +315,12 @@ def EA_crowding():
     global lb
     global EVALUATE_COUNT,MAX_EVALUATE_COUNT
     global f
+    global RADIUS
     ## intialization
     f = CEC2013(TARGET_FUNC)
     DIM = f.get_dimension()
     MAX_EVALUATE_COUNT = f.get_maxfes()
+    RADIUS = f.get_rho()
     ub = np.zeros(DIM)
     lb = np.zeros(DIM)
     # Get lower, upper bounds
@@ -400,7 +408,35 @@ def EA_crowding():
             print("In the current population there exist", count, "global optimizers.")
             print("Global optimizers:", seeds)
 
+def find_current_opts(population,fitness):
+    opts = []
+    opts_fitness = []
+    opts_fes = []
+    opts_time = []
+    accept_range = 0.9
+    population = sort(population,fitness)
+    fitness = sort(fitness,fitness)
+    best_fitness = fitness[0]
+
+    while opts_fitness[-1] > (opts_fitness[0] * accept_range):
+        optimal_indiv = population[0]
+        optimal_fit = fitness[0]
+        opts.append(optimal_indiv)
+        opts_fitness.append(optimal_fit)
+        opts_fes.append(EVALUATE_COUNT)
+        opts_time.append(time.time()-START_TIME)
+        for i in range(population.shape[0]):
+            if distance(population[i],optimal_indiv) <= RADIUS:
+                np.delete(population,i,axis=0)
+                np.delete(fitness,i,axis=0)
+                i -= 1
+
+
+
+
+
 if __name__ == "__main__":
+    START_TIME = time.time()
     EA_crowding()
     print(local_search_improve_count)
 

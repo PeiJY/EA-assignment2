@@ -11,7 +11,7 @@ TARGET_FUNC = 6
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
 TOURNAMENT_RATE = 0.4
-SHARING_RADIUS = 6
+RADIUS = 6
 SHARING_SIGMA = 0.5
 SHARING_BETA = 2
 LOCAL_SEARCH_LENGTH_RATE = 0.05
@@ -173,8 +173,8 @@ def fitness_share(population,fitness):
         for j in range(population.shape[0]):
             if i != j:
                 dis = distance(population[i],population[j])
-                if dis < SHARING_RADIUS:
-                    sh += 1 - math.pow((dis/SHARING_RADIUS),SHARING_SIGMA)
+                if dis < RADIUS:
+                    sh += 1 - math.pow((dis / RADIUS), SHARING_SIGMA)
         if sh == 0:
             sh = 0.0001
         new_fitness[i] = math.pow(fitness[i],SHARING_BETA) / sh
@@ -200,7 +200,7 @@ def EA_fitness_sharing():
     global ub
     global lb
     global EVALUATE_COUNT,MAX_EVALUATE_COUNT
-    global SHARING_RADIUS
+    global RADIUS
 
     ## intialization
     file = open("log.txt","w")
