@@ -8,7 +8,6 @@ KIDS_NUM = 1000
 RUN_REPEAT = 50
 MUTATE_RATE = 0.6
 TARGET_FUNC = 6
-MAX_EVALUATE_COUNT = 200000
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
 TOURNAMENT_RATE = 0.4
@@ -17,12 +16,16 @@ SHARING_SIGMA = 0.5
 SHARING_BETA = 2
 LOCAL_SEARCH_LENGTH_RATE = 0.05
 
+
+MAX_EVALUATE_COUNT = 0
 EVALUATE_COUNT = 0
 DIM = 0
 ub = 0
 lb = 0
 f = None
 local_search_improve_count = 0
+OPT_LIST = []
+OPT_FE_LIST = []
 
 def local_search1(indiv,fitness):
     global EVALUATE_COUNT,local_search_improve_count
@@ -129,7 +132,6 @@ def select_fitness_sharing(parents,parents_fitness,kids,kids_fitness):
     sorted_fitness = np.r_[buffer_fitness, sorted_fitness]
 
     order = np.argsort(sorted_fitness)
-    print("order: ",order)
     sorted_popu = sorted_popu[-order]
     sorted_fitness = sorted_fitness[-order]
     return sorted_popu,sorted_fitness
@@ -178,9 +180,6 @@ def fitness_share(population,fitness):
         if sh == 0:
             sh = 0.0001
         new_fitness[i] = math.pow(fitness[i],SHARING_BETA) / sh
-        print("----point: ",population[i])
-        print("before sharing: ",fitness[i])
-        print("sh: ",sh)
     return new_fitness
 
 def distance(indiv1, indiv2):
@@ -202,7 +201,9 @@ def EA_fitness_sharing():
     global DIM
     global ub
     global lb
-    global EVALUATE_COUNT
+    global EVALUATE_COUNT,MAX_EVALUATE_COUNT
+    global SHARING_RADIUS
+
     ## intialization
     file = open("log.txt","w")
     f = CEC2013(TARGET_FUNC)
@@ -213,19 +214,16 @@ def EA_fitness_sharing():
     for k in range(DIM):
         ub[k] = f.get_ubound(k)
         lb[k] = f.get_lbound(k)
-
+    SHARING_RADIUS = f.get_rho()
+    MAX_EVALUATE_COUNT = f.get_maxfes()
     population = init(ub,lb)
     fitness = evaluate(f,population)
-    print("init population: ",population)
-    print("init fitness: ", fitness)
     print(30*"*", ", init over")
     ## iteration
     while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
         print("evaluate count: ",EVALUATE_COUNT)
         kids = generate(population)
-        print("kids : ", kids)
         kids_fitness = evaluate(f, kids)
-        print("kids_fitness : ", kids_fitness)
 
         population,fitness = select_fitness_sharing(population,fitness,kids,kids_fitness)
         accuracy = 0.1
@@ -242,12 +240,11 @@ def EA_fitness_sharing():
     print("Global optimizers:", seeds)
 
 def generate_crowding(file ,f,population,fitness):
-    kids_count = 0
     global EVALUATE_COUNT
     # no local search : 10 11 13
     # has local search : 11 13 11
     # population,fitness = local_search(population,fitness)
-    while kids_count < POPU_SIZE:
+    while EVALUATE_COUNT < MAX_EVALUATE_COUNT:
         while True:
             indexA = random.randint(0,population.shape[0]-1)
             indexB = random.randint(0,population.shape[0]-1)
@@ -257,8 +254,8 @@ def generate_crowding(file ,f,population,fitness):
             kidB = crossover(parentB,parentA)
             kidA = mutate(kidA)
             kidB = mutate(kidB)
-            #if (not is_invalid(kidA)) and (not is_invalid(kidB)) and (not exist(kidA,population)) and (not exist(kidB,population)) :
-            break
+            if (not is_invalid(kidA)) and (not is_invalid(kidB)) and (not exist(kidA,population)) and (not exist(kidB,population)) :
+                break
 
         if  is_invalid(kidA) or is_invalid(kidB):
             continue
@@ -267,89 +264,141 @@ def generate_crowding(file ,f,population,fitness):
         kidB_fitness = f.evaluate(kidB)
         EVALUATE_COUNT += 2
 
-        #kidA,kidA_fitness = local_search1(kidA,kidA_fitness)
-        #kidB, kidB_fitness = local_search1(kidB, kidB_fitness)
+        #without duplicate check 7 5 7
+        # with dup check 8 6 8
+
+       # kidA,kidA_fitness = local_search1(kidA,kidA_fitness)
+       # kidB, kidB_fitness = local_search1(kidB, kidB_fitness)
         if((distance(parentA,kidA)+distance(parentB,kidB)) > (distance(parentA,kidB)+distance(parentB,kidA))):
             if(kidA_fitness > fitness[indexA]):
                 population[indexA] = kidA
                 fitness[indexA] = kidA_fitness
-                kids_count += 1
                 for i in kidA:
                     file.write(str(i) + " ")
                 file.write(str(kidA_fitness) + " ")
                 file.write( str(EVALUATE_COUNT) + '\n')
-                if (EVALUATE_COUNT >= MAX_EVALUATE_COUNT):
-                    break
             if (kidB_fitness > fitness[indexB]):
                 population[indexB] = kidB
                 fitness[indexB] = kidB_fitness
-                kids_count += 1
                 for i in kidA:
                     file.write(str(i) + " ")
                 file.write(str(kidA_fitness) + " ")
                 file.write( str(EVALUATE_COUNT) + '\n')
-                if (EVALUATE_COUNT >= MAX_EVALUATE_COUNT):
-                    break
         else:
             if (kidA_fitness > fitness[indexB]):
                 population[indexB] = kidA
                 fitness[indexB] = kidA_fitness
-                kids_count += 1
                 for i in kidA:
                     file.write(str(i) + " ")
                 file.write(str(kidA_fitness) + " ")
                 file.write( str(EVALUATE_COUNT) + '\n')
-                if (EVALUATE_COUNT >= MAX_EVALUATE_COUNT):
-                    break
             if (kidB_fitness > fitness[indexA]):
                 population[indexA] = kidB
                 fitness[indexA] = kidB_fitness
-                kids_count += 1
                 for i in kidA:
                     file.write(str(i) + " ")
                 file.write(str(kidA_fitness) + " ")
                 file.write( str(EVALUATE_COUNT) + '\n')
-                if (EVALUATE_COUNT >= MAX_EVALUATE_COUNT):
-                    break
-        print("EVALUATE_COUNT: ",EVALUATE_COUNT)
-    return population,fitness
 
+
+    return population,fitness
 
 def EA_crowding():
     global DIM
     global ub
     global lb
-    global EVALUATE_COUNT
+    global EVALUATE_COUNT,MAX_EVALUATE_COUNT
     global f
     ## intialization
-    file = open("log.txt","w")
     f = CEC2013(TARGET_FUNC)
     DIM = f.get_dimension()
+    MAX_EVALUATE_COUNT = f.get_maxfes()
     ub = np.zeros(DIM)
     lb = np.zeros(DIM)
     # Get lower, upper bounds
     for k in range(DIM):
         ub[k] = f.get_ubound(k)
         lb[k] = f.get_lbound(k)
-    population = init(ub,lb)
-    fitness = evaluate(f,population)
-    print(30*"*", ", init over")
-    ## iteration
-    while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
-        print("evaluate count: ",EVALUATE_COUNT)
-        population,fitness = generate_crowding(file,f,population,fitness)
-        accuracy = 0.1
+    for RUN_COUNT in range(1, RUN_REPEAT + 1):
+        EVALUATE_COUNT = 0
+        output_filename = "problem%03drun%03d.dat" % (TARGET_FUNC, RUN_COUNT)
+        file = open(output_filename, "w")  ##problem001run001.dat
+        population = init(ub,lb)
+        fitness = evaluate(f,population)
+        ## iteration
+        while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
+            if EVALUATE_COUNT%5000 == 0:
+                print(70*"=")
+                print(EVALUATE_COUNT)
+                accuracys = [1, 0.1, 0.01, 0.001]
+                for accuracy in accuracys:
+                    print("accurcy = ", accuracy)
+                    count, seeds = how_many_goptima(population, f, accuracy)
+                    print("In the current population there exist", count, "global optimizers.")
+                    print("Global optimizers:", seeds)
+
+            # generate valid and unduplicated indiv
+            while True:
+                indexA = random.randint(0, population.shape[0] - 1)
+                indexB = random.randint(0, population.shape[0] - 1)
+                parentA = population[indexA]
+                parentB = population[indexB]
+                kidA = crossover(parentA, parentB)
+                kidB = crossover(parentB, parentA)
+                kidA = mutate(kidA)
+                kidB = mutate(kidB)
+                if (not is_invalid(kidA)) and (not is_invalid(kidB)) and (not exist(kidA, population)) and (
+                not exist(kidB, population)):
+                    break
+
+            # evaluate
+            kidA_fitness = f.evaluate(kidA)
+            kidB_fitness = f.evaluate(kidB)
+            EVALUATE_COUNT += 2
+            # kidA,kidA_fitness = local_search1(kidA,kidA_fitness)
+            # kidB, kidB_fitness = local_search1(kidB, kidB_fitness)
+
+            # compare for replacement
+            if ((distance(parentA, kidA) + distance(parentB, kidB)) > (
+                    distance(parentA, kidB) + distance(parentB, kidA))):
+                if (kidA_fitness > fitness[indexA]):
+                    population[indexA] = kidA
+                    fitness[indexA] = kidA_fitness
+                    for i in kidA:
+                        file.write(str(i) + " ")
+                    file.write(str(kidA_fitness) + " ")
+                    file.write(str(EVALUATE_COUNT) + '\n')
+                if (kidB_fitness > fitness[indexB]):
+                    population[indexB] = kidB
+                    fitness[indexB] = kidB_fitness
+                    for i in kidA:
+                        file.write(str(i) + " ")
+                    file.write(str(kidA_fitness) + " ")
+                    file.write(str(EVALUATE_COUNT) + '\n')
+            else:
+                if (kidA_fitness > fitness[indexB]):
+                    population[indexB] = kidA
+                    fitness[indexB] = kidA_fitness
+                    for i in kidA:
+                        file.write(str(i) + " ")
+                    file.write(str(kidA_fitness) + " ")
+                    file.write(str(EVALUATE_COUNT) + '\n')
+                if (kidB_fitness > fitness[indexA]):
+                    population[indexA] = kidB
+                    fitness[indexA] = kidB_fitness
+                    for i in kidA:
+                        file.write(str(i) + " ")
+                    file.write(str(kidA_fitness) + " ")
+                    file.write(str(EVALUATE_COUNT) + '\n')
+
+
+        file.close()
+        accuracys = [1,0.1,0.01,0.001]
         count, seeds = how_many_goptima(population, f, accuracy)
-        print("In the current population there exist", count, "global optimizers.")
-        print("Global optimizers:", seeds)
-        print(70*"=")
-    file.close()
-    accuracys = [1,0.1,0.01,0.001]
-    count, seeds = how_many_goptima(population, f, accuracy)
-    for accuracy in accuracys:
-        print("accurcy = ", accuracy)
-        print("In the current population there exist", count, "global optimizers.")
-        print("Global optimizers:", seeds)
+        for accuracy in accuracys:
+            print("accurcy = ", accuracy)
+            print("In the current population there exist", count, "global optimizers.")
+            print("Global optimizers:", seeds)
 
 if __name__ == "__main__":
     EA_crowding()
