@@ -15,7 +15,7 @@ POPU_SIZE = 1000
 KIDS_NUM = 1000
 RUN_REPEAT = 1
 MUTATE_RATE = 0.6
-TARGET_FUNC = 1
+TARGET_FUNC = 6
 CROSSOVER_ALPHA = 0.6
 MUTATE_GAMMA = 2
 TOURNAMENT_RATE = 0.4
@@ -36,6 +36,93 @@ local_search_improve_count = 0
 OPT_LIST = []
 OPT_FE_LIST = []
 START_TIME = 0
+
+
+def calculate_tour_rate():
+    return TOURNAMENT_RATE * ( tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 2))
+
+# 每个维度，正负2侧生成
+def local_search1(indiv,fitness):
+    global EVALUATE_COUNT,local_search_improve_count
+    step_size =  RADIUS * LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 3))
+    best_indiv = indiv
+    best_fitness = fitness
+    for j in range(indiv.shape[0]):
+        new_indiv = indiv
+        new_indiv[j] += step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            new_fitness = f.evaluate(new_indiv)
+            EVALUATE_COUNT += 1
+            if new_fitness > best_fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+                new_indiv = indiv
+        new_indiv[j] -= step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            EVALUATE_COUNT += 1
+            new_fitness = f.evaluate(new_indiv)
+            if new_fitness > best_fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+    return best_indiv,best_fitness
+
+# 一侧有提升则不再生成
+def local_search2(indiv,fitness):
+    global EVALUATE_COUNT,local_search_improve_count
+    step_size =  RADIUS * LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT / MAX_EVALUATE_COUNT * 2))
+    best_indiv = indiv
+    best_fitness = fitness
+    for j in range(indiv.shape[0]):
+        new_indiv = indiv
+        new_indiv[j] += step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            new_fitness = f.evaluate(new_indiv)
+            EVALUATE_COUNT += 1
+            if new_fitness > fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+                break
+        new_indiv = indiv
+        new_indiv[j] -= step_size * (ub[j] - lb[j])
+        if not is_invalid(new_indiv):
+            EVALUATE_COUNT += 1
+            new_fitness = f.evaluate(new_indiv)
+            if new_fitness > best_fitness:
+                best_indiv = new_indiv
+                best_fitness = new_fitness
+                break
+    return best_indiv,best_fitness
+
+def local_search(population,fitness):
+    global EVALUATE_COUNT,local_search_improve_count
+    step_size = RADIUS *  LOCAL_SEARCH_LENGTH_RATE * (1 - tanh(EVALUATE_COUNT/MAX_EVALUATE_COUNT * 3))
+    for i in range(population.shape[0]):
+        indiv = population[i]
+        indiv_fitness = fitness[i]
+        best_indiv = indiv
+        best_fitness = indiv_fitness
+        for j in range(population.shape[1]):
+            new_indiv = indiv
+            new_indiv[j] += step_size * (ub[j]-lb[j])
+            if not is_invalid(new_indiv):
+                new_fitness = f.evaluate(new_indiv)
+                EVALUATE_COUNT += 1
+                if new_fitness > best_fitness:
+                    best_indiv = new_indiv
+                    best_fitness = new_fitness
+            new_indiv = indiv
+            new_indiv[j] -= step_size * (ub[j] - lb[j])
+            if not is_invalid(new_indiv):
+                EVALUATE_COUNT += 1
+                new_fitness = f.evaluate(new_indiv)
+                if new_fitness > best_fitness:
+                    best_indiv = new_indiv
+                    best_fitness = new_fitness
+        population[i] = best_indiv
+        if (fitness[i] < best_fitness):
+            local_search_improve_count += 1
+        fitness[i] = best_fitness
+    return population,fitness
 
 def tanh(x):
     return (np.exp(x) - np.exp(-x)) / (np.exp(x) + np.exp(-x))
@@ -77,6 +164,35 @@ def sort(targets,marks): # sort targets based on marks
     order = np.argsort(marks)
     return targets[-order]
 
+def select_fitness_sharing(parents,parents_fitness,kids,kids_fitness):
+    keep_rate = 0.1
+    edge = int(keep_rate*POPU_SIZE)
+    buffer_popu = parents[0:edge,:]
+    buffer_fitness = parents_fitness[0:edge]
+    population = np.r_[parents[edge+1:,:], kids]
+    fitness = np.r_[parents_fitness[edge+1:], kids_fitness]
+    total_popu_size = population.shape[0]
+    modified_fitness = fitness_share(population,fitness)
+    win_table = np.zeros(total_popu_size)
+    for i in range(total_popu_size):
+        for j in range(0,int(total_popu_size * TOURNAMENT_RATE)):
+            another = random.randint(0,total_popu_size-1)
+            if( modified_fitness[i] > modified_fitness[another]):
+                win_table[i] += 1
+    order = np.argsort(win_table)
+    sorted_popu = population[-order]
+    sorted_fitness = fitness[-order]
+    sorted_popu =sorted_popu[0:POPU_SIZE,:]
+    sorted_fitness = sorted_fitness[0:POPU_SIZE]
+
+    sorted_popu = np.r_[buffer_popu,sorted_popu]
+    sorted_fitness = np.r_[buffer_fitness, sorted_fitness]
+
+    order = np.argsort(sorted_fitness)
+    sorted_popu = sorted_popu[-order]
+    sorted_fitness = sorted_fitness[-order]
+    return sorted_popu,sorted_fitness
+
 def exist(indiv,population):
     a = (population == indiv)
     duplicate = False
@@ -86,6 +202,20 @@ def exist(indiv,population):
             break
     return duplicate
 
+def generate(population):
+    kids = np.zeros((KIDS_NUM,DIM))
+    kids_count = 0
+    while kids_count < KIDS_NUM:
+        kid = crossover(population[random.randint(0,population.shape[0]-1)],population[random.randint(0,population.shape[0]-1)])
+        kid = mutate(kid)
+        if is_invalid(kid):
+            continue
+        if not exist(kid,kids):
+            kids[kids_count] = kid
+            kids_count += 1
+
+    return kids
+
 def is_invalid(indiv):
     invalid = False
     for j in range(DIM):
@@ -93,6 +223,21 @@ def is_invalid(indiv):
             invalid = True
             break
     return invalid
+
+def fitness_share(population,fitness):
+
+    new_fitness = np.zeros(fitness.shape)
+    for i in range(population.shape[0]):
+        sh = 0
+        for j in range(population.shape[0]):
+            if i != j:
+                dis = distance(population[i],population[j])
+                if dis < RADIUS:
+                    sh += 1 - math.pow((dis / RADIUS), SHARING_SIGMA)
+        if sh == 0:
+            sh = 0.0001
+        new_fitness[i] = math.pow(fitness[i],SHARING_BETA) / sh
+    return new_fitness
 
 def distance(indiv1, indiv2):
     sum = 0
@@ -108,6 +253,49 @@ def evaluate(f,x):
         fitness[i] = f.evaluate(x[i])
         EVALUATE_COUNT += 1
     return fitness
+
+def EA_fitness_sharing():
+    global DIM
+    global ub
+    global lb
+    global EVALUATE_COUNT,MAX_EVALUATE_COUNT
+    global RADIUS
+
+    ## intialization
+    file = open("log.txt","w")
+    f = CEC2013(TARGET_FUNC)
+    DIM = f.get_dimension()
+    ub = np.zeros(DIM)
+    lb = np.zeros(DIM)
+    # Get lower, upper bounds
+    for k in range(DIM):
+        ub[k] = f.get_ubound(k)
+        lb[k] = f.get_lbound(k)
+    RADIUS = f.get_rho()
+    MAX_EVALUATE_COUNT = f.get_maxfes()
+    population = init(ub,lb)
+    fitness = evaluate(f,population)
+    print(30*"*", ", init over")
+    ## iteration
+    while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
+        print("evaluate count: ",EVALUATE_COUNT)
+        kids = generate(population)
+        kids_fitness = evaluate(f, kids)
+
+        population,fitness = select_fitness_sharing(population,fitness,kids,kids_fitness)
+        accuracy = 0.1
+        for i in range(population.shape[0]):
+            file.write(str(population[i][0]) + " " + str(fitness[i])+ " " + str(EVALUATE_COUNT) + '\n')
+        count, seeds = how_many_goptima(population, f, accuracy)
+        print("In the current population there exist", count, "global optimizers.")
+        print("Global optimizers:", seeds)
+        print(70*"=")
+    file.close()
+    accuracy = 1
+    count, seeds = how_many_goptima(population, f, accuracy)
+    print("In the current population there exist", count, "global optimizers.")
+    print("Global optimizers:", seeds)
+
 
 def EA_crowding():
     global DIM
@@ -131,7 +319,7 @@ def EA_crowding():
         ub[k] = f.get_ubound(k)
         lb[k] = f.get_lbound(k)
     opt_log = [[0,0,0,0] for _ in range(int(MAX_EVALUATE_COUNT/CKPT))]
-    for RUN_COUNT in range(1, RUN_REPEAT+1):
+    for RUN_COUNT in range(1, RUN_REPEAT):
         EVALUATE_COUNT = 0
         generation_log_filename = "logs\\problem%03drun%03d_generation_log.txt"% (TARGET_FUNC, RUN_COUNT)
         print(generation_log_filename)
@@ -241,7 +429,7 @@ def EA_crowding():
         for x in range(int(MAX_EVALUATE_COUNT/CKPT)):
             opts_log_file.write(str(x) + " ")
             for k in range(4):
-                opts_log_file.write(str(opt_log[x][k]/(RUN_REPEAT)) + " ")
+                opts_log_file.write(str(opt_log[x][k]/(MAX_EVALUATE_COUNT/CKPT)) + " ")
             opts_log_file.write("\n")
 
         generation_log_file.close()
@@ -262,7 +450,6 @@ def EA_crowding():
             print("accurcy = ", accuracy)
             print("In the current population there exist", count, "global optimizers.")
             # print("Global optimizers:", seeds)
-
 
 
 # not used
@@ -289,7 +476,7 @@ def find_opts(population,fitness):
         opts.append(optimal_indiv)
         opts_fitness.append(optimal_fit)
         opts_fes.append(EVALUATE_COUNT)
-        opts_time.append(time.time()-START_TIME)
+        opts_time.append((time.time()-START_TIME)*1000)
         # delete all near indiv of optimal indiv
         for i in range(population.shape[0]):
             if distance(population[i],optimal_indiv) <= RADIUS:
@@ -313,6 +500,6 @@ def find_opts(population,fitness):
 
 
 if __name__ == "__main__":
-    for TARGET_FUNC in range(3,6):
+    for TARGET_FUNC in range(2,6):
         EA_crowding()
 

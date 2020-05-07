@@ -1,10 +1,13 @@
         close all;
         clear;
-        date = load("log.txt");
+        date = load("logs\problem001run001_generation_log.txt");
         
-        x=date(:,1);
+        x=date(:,3);
         y=date(:,2);
-        z=date(:,3);
-        scatter3(x,y,z,'*')
+        z=date(:,1);
 
+        scatter3(x,y,z,'.')
+        xlabel('indiv')
+        ylabel('fitness')
+        zlabel('fes')
 
