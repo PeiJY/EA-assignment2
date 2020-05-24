@@ -37,6 +37,28 @@ OPT_LIST = []
 OPT_FE_LIST = []
 START_TIME = 0
 
+
+
+def diff_mutate(target,target_fitness,population,fitness):
+    global EVALUATE_COUNT
+    found = False
+    for i in range(POPU_SIZE):
+        refer_index = i
+        reference = population[refer_index]
+        if distance(reference, target) < RADIUS * math.pow(2, 1 - (EVALUATE_COUNT / MAX_EVALUATE_COUNT)):
+            found = True
+            break
+    if found:
+        reference_fitness = fitness[refer_index]
+        if(reference_fitness < target_fitness):
+            for i in range(DIM):
+                target[i] += random.random() * (reference[i] - target[i])
+        target_fitness = f.evaluate(target)
+        EVALUATE_COUNT += 1
+        return target,target_fitness
+    return target,target_fitness
+
+
 def tanh(x):
     return (np.exp(x) - np.exp(-x)) / (np.exp(x) + np.exp(-x))
 
@@ -109,6 +131,16 @@ def evaluate(f,x):
         EVALUATE_COUNT += 1
     return fitness
 
+def routtle_select(total_num):
+    sum = total_num * (total_num+1) /2
+    a = random.randint(1,sum)
+    current_sum = 0
+    x = total_num
+    while a > current_sum:
+        current_sum += x
+        x -= 1
+    return total_num - x
+
 def EA_crowding():
     global DIM
     global ub
@@ -145,6 +177,7 @@ def EA_crowding():
         init_time = (time.time()-START_TIME)*1000
         time_list = np.array([init_time for i in range(POPU_SIZE)])
         ## iteration
+        unselected = False
         while(EVALUATE_COUNT < MAX_EVALUATE_COUNT):
             if EVALUATE_COUNT%CKPT == 0:
                 print(70*"=")
@@ -165,13 +198,35 @@ def EA_crowding():
                 #for i in range(int(0.05 * POPU_SIZE)):
                 #    population[i],fitness[i] = random_local_search(population[i],fitness[i])
 
+
+            # filter
+
+            if unselected and  EVALUATE_COUNT >= 0.8 * MAX_EVALUATE_COUNT:
+                unselected = False
+                population = sort(population,fitness)
+                fitness = sort(fitness,fitness)
+                cut = 0
+                for i in range(POPU_SIZE):
+                    if fitness[i] < fitness[0]:
+                        cut = i
+                        break
+                population = population[:cut]
+                fitness = fitness[:cut]
+                while population.shape[0] < POPU_SIZE:
+                    population = np.r_[population, population]
+                    fitness = np.r_[fitness, fitness]
+                population = population[:POPU_SIZE]
+                fitness = fitness[:POPU_SIZE]
+
             # generate valid and unduplicated indiv
             while True:
                 indexA = random.randint(0, population.shape[0] - 1)
                 indexB = random.randint(0, population.shape[0] - 1)
+                #indexA = routtle_select(POPU_SIZE)-1
+                #indexB = routtle_select(POPU_SIZE)-1
                 parentA = population[indexA]
                 parentB = population[indexB]
-                if distance(parentA,parentB) > RADIUS: # Speciation , to avoid the population get closer and closer to center of solution space
+                if distance(parentA,parentB) > RADIUS * math.pow(2,1-(EVALUATE_COUNT/MAX_EVALUATE_COUNT)): # Speciation , to avoid the population get closer and closer to center of solution space
                     continue
                 kidA = crossover(parentA, parentB)
                 kidB = crossover(parentB, parentA)
@@ -185,6 +240,11 @@ def EA_crowding():
             kidA_fitness = f.evaluate(kidA)
             kidB_fitness = f.evaluate(kidB)
             EVALUATE_COUNT += 2
+
+            # diff mutate
+            #kidA,kidA_fitness = diff_mutate(kidA,kidA_fitness,population,fitness)
+            #kidB,kidB_fitness= diff_mutate(kidB, kidB_fitness, population, fitness)
+
             #kidA, kidA_fitness = local_search2(kidA,kidA_fitness)
             #kidB, kidB_fitness = local_search2(kidB, kidB_fitness)
 
@@ -209,6 +269,7 @@ def EA_crowding():
                     time_list[indexB] = (time.time() - START_TIME)*1000
                     generation_log_file.write(str(kidA_fitness) + " ")
                     generation_log_file.write(str(EVALUATE_COUNT) + " " )
+
                     for i in kidA:
                         generation_log_file.write(str(i) + " ")
                     generation_log_file.write('\n')
@@ -221,6 +282,7 @@ def EA_crowding():
                     time_list[indexB] = (time.time() - START_TIME)*1000
                     generation_log_file.write(str(kidA_fitness) + " ")
                     generation_log_file.write(str(EVALUATE_COUNT) + " " )
+
                     for i in kidA:
                         generation_log_file.write(str(i) + " ")
                     generation_log_file.write('\n')
@@ -232,6 +294,7 @@ def EA_crowding():
                     time_list[indexA] = (time.time() - START_TIME)*1000
                     generation_log_file.write(str(kidA_fitness) + " ")
                     generation_log_file.write(str(EVALUATE_COUNT) + " " )
+
                     for i in kidA:
                         generation_log_file.write(str(i) + " ")
                     generation_log_file.write('\n')
@@ -246,7 +309,7 @@ def EA_crowding():
 
         generation_log_file.close()
         output_filename = "output\\problem%03drun%03d.dat" % (TARGET_FUNC, RUN_COUNT)
-        output_file = open(output_filename, "w")  ##problem001run001.dat
+        output_file = open(output_filename, "w")
         for i in range(POPU_SIZE):
             for j in range(DIM):
                 output_file.write(str(population[i][j]) + " ")
@@ -261,58 +324,8 @@ def EA_crowding():
             count, seeds = how_many_goptima(population, f, accuracy)
             print("accurcy = ", accuracy)
             print("In the current population there exist", count, "global optimizers.")
-            # print("Global optimizers:", seeds)
-
-
-
-# not used
-def find_opts(population,fitness):
-    global OPTS,OPTS_FITNESS,OPTS_FES,OPTS_TIME
-    opts = []
-    opts_fitness = []
-    opts_fes = []
-    opts_time = []
-    accept_range = 0.9
-    population = sort(population,fitness)
-    fitness = sort(fitness,fitness)
-    if OPTS_FITNESS.size > 0:
-        best_fitness = OPTS_FITNESS[0]
-    else:
-        best_fitness = 0
-
-    # find the optimal indiv in current generation
-    while opts_fitness[-1] > (best_fitness * accept_range):
-        optimal_indiv = population[0]
-        optimal_fit = fitness[0]
-        if optimal_fit > best_fitness:
-            best_fitness = optimal_fit
-        opts.append(optimal_indiv)
-        opts_fitness.append(optimal_fit)
-        opts_fes.append(EVALUATE_COUNT)
-        opts_time.append(time.time()-START_TIME)
-        # delete all near indiv of optimal indiv
-        for i in range(population.shape[0]):
-            if distance(population[i],optimal_indiv) <= RADIUS:
-                np.delete(population,i,axis=0)
-                np.delete(fitness,i,axis=0)
-                i -= 1
-
-    sorted = sort(np.array([np.r_[OPTS_TIME, opts_time],np.r_[OPTS_FES ,opts_fes],np.r_[ OPTS_FITNESS,opts_fitness],np.r_[ OPTS,opts]]),np.r_[ OPTS_FITNESS,opts_fitness])
-
-    opts_fitness = sorted[:, 2]
-    ckpt = 0
-    for i in range(opts_fitness):
-        if opts_fitness[i] < best_fitness * accept_range:
-            ckpt = i
-            break
-
-    OPTS_TIME = sorted[:ckpt,0]
-    OPTS_FES = sorted[:ckpt,1]
-    OPTS_FITNESS = sorted[:ckpt,2]
-    OPTS = sorted[:ckpt, 3:]
-
 
 if __name__ == "__main__":
-    for TARGET_FUNC in range(3,6):
-        EA_crowding()
+
+    EA_crowding()
 

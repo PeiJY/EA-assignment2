@@ -1,7 +1,7 @@
         close all;
         clear;
         figure(1)
-        date = load("logs\problem002run001_generation_log.txt");
+        date = load("logs\problem007run001_generation_log.txt");
         x=date(:,3);
         y=date(:,4);
         fes=date(:,1);
@@ -11,7 +11,7 @@
         scatter3(x,y,evalue,50,fes,'.')
         
         figure(3)
-        data =  load("opts_log.txt");
+        data =  load("average\problem007_opts_log.txt");
         x = data(:,1);
         y = data(:,2);
         hold on;

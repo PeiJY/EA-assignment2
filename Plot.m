@@ -13,7 +13,7 @@
 
 
         figure(3)
-        data =  load("average\problem003_opts_log.txt");
+        data =  load("average\problem001_opts_log.txt");
         x = data(:,1);
         y = data(:,2);
         hold on;
