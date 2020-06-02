@@ -131,15 +131,6 @@ def evaluate(f,x):
         EVALUATE_COUNT += 1
     return fitness
 
-def routtle_select(total_num):
-    sum = total_num * (total_num+1) /2
-    a = random.randint(1,sum)
-    current_sum = 0
-    x = total_num
-    while a > current_sum:
-        current_sum += x
-        x -= 1
-    return total_num - x
 
 def EA_crowding():
     global DIM
@@ -199,8 +190,7 @@ def EA_crowding():
                 #    population[i],fitness[i] = random_local_search(population[i],fitness[i])
 
 
-            # filter
-
+            # at the point of 0.8 evaluation is used, remove all low fitness individual.
             if unselected and  EVALUATE_COUNT >= 0.8 * MAX_EVALUATE_COUNT:
                 unselected = False
                 population = sort(population,fitness)
@@ -222,8 +212,7 @@ def EA_crowding():
             while True:
                 indexA = random.randint(0, population.shape[0] - 1)
                 indexB = random.randint(0, population.shape[0] - 1)
-                #indexA = routtle_select(POPU_SIZE)-1
-                #indexB = routtle_select(POPU_SIZE)-1
+
                 parentA = population[indexA]
                 parentB = population[indexB]
                 if distance(parentA,parentB) > RADIUS * math.pow(2,1-(EVALUATE_COUNT/MAX_EVALUATE_COUNT)): # Speciation , to avoid the population get closer and closer to center of solution space
